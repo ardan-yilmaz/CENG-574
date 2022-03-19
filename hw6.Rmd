@@ -1,0 +1,640 @@
+---
+title: "CENG 574 - Statistical Data Analysis - Assignment 7"
+author: "Ardan Yılmaz 2172195 && Baran Gulmez 2534089"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# GROUP NAME: OUTLIERS
+
+```{r setup, include=FALSE}
+options(rgl.useNULL = TRUE) # Suppress the separate window.
+library(knitr)
+library(rgl)
+library(vegan)
+library(vegan3d)
+library(ggfortify)
+knit_hooks$set(webgl = hook_webgl)
+```
+
+![](img.png){width=250px}
+
+## Datset and Preliminary Analysis
+
+Electrical power plants need a fault detection system in minimum possible time for both equipment protection and remaining stable. For this, a power system is designed using MATLAB by robotics engineers, where the circuit is simulated under normal and faulty conditions, results of which has been recorded to a dataset. The dataset can be found at: https://www.kaggle.com/esathyaprakash/electrical-fault-detection-and-classification?select=detect_dataset.csv. [1]
+
+```{r, include=FALSE}
+data <- read.csv(file = "C:\\Users\\LENOVO\\Desktop\\ardan\\574\\hw2\\elecrtrical_fault_detect_dataset.csv")
+keep = c("Output..S.", "Ia", "Ib", "Ic", "Va", "Vb", "Vc")
+data <- data[keep]
+```
+
+The following table shows the simulation instances where voltage and current values for sources A, B, and C are measured as Va, Vb, Vc, Ia, Ib, and Ic respectively. And the output field indicates whether the system is faulty. As can be inferred, this is a binary classification, ie, the system is either faulty (indicated by output = 1) or not (indicated by output = 0).
+
+```{r}
+head(data)
+
+faulty <- subset(data, data$Output..S. == 1)
+no_fault <- subset(data, data$Output..S. == 0)
+cat("The number of instances with no fault: ", length(no_fault$Output..S.))
+cat("The number of instances with fault: ", length(faulty$Output..S.))
+```
+
+The following plots show the effect of change in inputs ("Ia", "Ib", "Ic", "Va", "Vb", "Vc") on the output (faultiness).
+
+
+
+```{r, echo=FALSE, fig.width=6, fig.asp=0.618, out.width="33%", fig.align="default"}
+boxplot(xlab= "Faultiness", ylab= "Ia", data$Ia ~ data$Output..S.)
+boxplot(xlab= "Faultiness", ylab= "Ib", data$Ib ~ data$Output..S.)
+boxplot(xlab= "Faultiness", ylab= "Ic", data$Ic ~ data$Output..S.)
+boxplot(xlab= "Faultiness", ylab= "Va", data$Va~ data$Output..S.)
+boxplot(xlab= "Faultiness", ylab= "Vb", data$Vb ~ data$Output..S.)
+boxplot(xlab= "Faultiness", ylab= "Vc", data$Vc ~ data$Output..S.)
+```
+
+### Preliminary Analysis Conclusion
+For faultiness, only by observing the voltage values, it is hard to say something, as all cases with non-faulty outputs have a wider range of voltages, containing that of the faulty ones. Yet, the measured voltage values falling to the narrow range of input with faulty outcomes, although it overlaps with the one with the non-faulty output, can be considered as the "risky" ones. The range of current values with non-faulty outputs is far more narrow than that of the faulty ones. That is, the current values falling to these areas, not covered by current values with non-faulty outputs, are likely to be faulty. 
+
+## Principal Component Analysis on Electrical-Fault-Detection Dataset
+The following code snippet is to produce the principal components in R. 
+```{r}
+my_pc <- prcomp(data[,2:7], scale = TRUE)
+print(my_pc)
+summary(my_pc)
+
+```
+
+One can yield from the previous table, showing the weights of the real features to the linear combination to produce the principal components, that most of the weights come from the voltage values, ie, Vb, Va, and Va for PC1, PC2 and PC3 respectively. This seems convenient with the comment made in the conclusion in the first step, ie, the voltage values measured correspond to a greater variance. 
+
+The following table and graph show the "importance" of the components, i.e., how informative they are to represent the majority of the instances.
+```{r}
+summary(my_pc)
+screeplot(my_pc)
+```
+
+
+As can be seen from the preceding graph, the first four components are the most "important" ones, as they carry much of the proportion of variance. And hence, it seems, the first two components do not suffice to represent the whole data. That's why, I do not expect to see distinct clusters when visualized in 2d. In fact, the first four components seem to carry the most of the information; yet, for visualization, I will only be able to try with 2D and 3D.
+
+
+The following figure is the distribution of data points based on the first two principal components.
+
+
+```{r}
+ggplot2::autoplot(my_pc, data = data, colour = 'Output..S.')
+```
+
+Although I was not expecting to see distinct clusters in 2D, ie, by using only the first two principal components, it seems they do form clusters. One can observe that the non-faulty ones (represented by dots plotted in darker blue) and the rest seem to form clusters in 3d although the graph is in 2d. 
+
+The graph seems that it will become more meaningful if plotted in 3d. The interactive 3d plot can be seen below.
+
+
+```{r}
+PC <- (my_pc$x)
+PC1 <- c(PC[,1])
+PC2 <- c(PC[,2])
+PC3 <- c(PC[,3])
+library(rgl)
+cols = factor(data$Output..S., labels = c("red", "black"))
+plot3d(x=PC1, y=PC2, z=PC3, col=cols)
+legend3d("topright", legend = paste('Type: ', c('Non-Faulty', 'Faulty')), pch = 16, col=c("red", "black"), cex=1, inset=c(0.02))
+rglwidget()
+```
+
+
+
+
+As can be seen from the plots (both in 2d and 3d), the non-faulty ones (red dots) form a cluster much more distinctly. This is also convenient with the previous discussion, so the evidence to support it strengthens.
+
+
+## Multi-dimensional Scaling on Electrical-Fault-Detection Dataset
+
+To apply MDS, we first need a distance/proximity/(dis)similarity matrix, computed as follows:
+
+(Due to memory constraints, I had to sample the dataset by a ratio of 1:10).
+
+```{r}
+data_sampled <- data[sample(1:nrow(data), 1000), ]
+dist_n <- dist(data_sampled, method = 'euclidean')
+```
+
+Based on the previous analysis, I plotted the rest of the graphs in 3D for meaningful visualization purposes.
+
+MDS transforms the dissimilarity matrix to disparities to maximize the Kruskal's stress function, ie, to optimally scale the dissimilarity values. There are multiple transformation functions provided in the smacof package. [2]
+Here, I applied three of them; namely, Ratio MDS, Interval MDS, and Monotone spline MDS, all of which provide a different levels of flexibility for transformation of dissimilarity to scaled distance.
+
+
+
+### Ratio MDS
+```{r, include=FALSE}
+library("smacof")
+```
+
+```{r}
+cols = factor(data_sampled$Output..S., labels = c("red", "black"))
+mds3 = mds(delta = dist_n, ndim = 3, type = "ratio")
+library(rgl)
+plot3d(mds3$conf, col = cols)
+legend3d("topright", legend = paste('Type: ', c('Non-Faulty', 'Faulty')), pch = 16, col=c("red", "black"), cex=1, inset=c(0.02))
+rglwidget()
+```
+
+
+### Interval MDS
+
+```{r}
+mds3 = mds(delta = dist_n, ndim = 3, type = "interval")
+library(rgl)
+plot3d(mds3$conf, col = cols)
+legend3d("topright", legend = paste('Type: ', c('Non-Faulty', 'Faulty')), pch = 16, col=c("red", "black"), cex=1, inset=c(0.02))
+rglwidget()
+```
+
+### Monotone spline MDS 
+
+```{r}
+mds3 = mds(delta = dist_n, ndim = 3, type = "mspline")
+library(rgl)
+plot3d(mds3$conf, col = cols)
+legend3d("topright", legend = paste('Type: ', c('Non-Faulty', 'Faulty')), pch = 16, col=c("red", "black"), cex=1, inset=c(0.02))
+rglwidget()
+```
+
+
+
+Although sampled, ie, not all data is included, the data seem to form clusters well. Furthermore, the plotted graphs seem all convenient within themselves, and the previous PCA results.
+
+All MDS methods results in more or less the same; that's why, it strengthens the conclusions arrived at previous steps, ie, the measurements for non-faulty systems form a more strict cluster.
+
+
+# ISOMAP on Dataset
+
+## Finding the optimal K for ISOMAP using KNN Algorithm
+
+```{r}
+
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+
+data_sampled <- data[sample(1:nrow(data), 1000), ]
+true_labels <- factor(data_sampled$Output..S.)
+
+data_normalized <- normalize(data_sampled[,2:ncol(data_sampled)])
+
+dat.d <- sample(1:nrow(data_normalized),size=nrow(data_normalized)*0.7,replace = FALSE) #random selection of 70% data.
+
+train.data <- data_sampled[dat.d,] # 70% training data
+test.data <- data_sampled[-dat.d,] # remaining 30% test data
+
+#Now creating separate dataframe for 'Creditability' feature which is our target.
+train.labels <- data_sampled[dat.d,1]
+test.labels  <- data_sampled[-dat.d,1]
+
+
+
+library(class)
+# find the optimal k
+
+i=1                          # declaration to initiate for loop
+k.optm=1                     # declaration to initiate for loop
+for (i in 1:100){
+  knn.mod <-  knn(train=train.data, test=test.data, cl=train.labels, k=i)
+  k.optm[i] <- 100 * sum(test.labels == knn.mod)/NROW(test.labels)
+  k=i
+}
+
+plot(k.optm, type="b", xlab="K- Value",ylab="Accuracy level")
+
+```
+
+Although k=1 gives the best performance, choosing so small k is known to lead to overfitting. That's why k=10 is chosen.
+
+## ISOMAP with k = 10
+
+
+```{r,  webgl=TRUE}
+data_sampled <- data[sample(1:nrow(data), 100), ]
+dist <- dist(data_sampled, method = 'euclidean')
+
+dom <- factor(data_sampled$Output..S.)
+iso <- isomap(dist, ndim=3, k=10)
+rgl.isomap(iso, col = as.numeric(dom))
+```
+
+
+
+# HIERARCHICAL CLUSTERING
+
+There are mainly two methods for hierarchical clustering, namely, top-down and bottom-up approaches. For the first one,  we form a huge cluster to contain all data initially and then divide into clusters; whereas, for the second one, we have clusters for each data point and then merge them to bigger clusters.
+
+## AGGLOMERATIVE (BOTTOM-UP) APPROACH
+
+There are different methods to define the inter-cluster and intra-cluster distances. The ones listed below are the ones used:
+
+1. Max Link Method: We choose the maximum distance between all pairs of data points from each cluster.
+
+2. Min Link Method: We choose the minimum distance between all pairs of data points from each cluster.
+
+3. Mean Method: Distance is taken to be the average of all pairs of distances between clusters.
+
+4. Ward's Minimum Variance Method: Minimizes the total within-cluster-distance (intra-cluster distance)
+
+
+
+The dataset is subsampled so that the tree to show the hierarchical clustering and the true labels are visible, and to keep the run time feasible. Below one can see the true labels and the clusters into which they are assigned, so they have an understanding of the clustering performance.
+
+```{r}
+normalize <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x)))
+}
+data_sampled <- data[sample(1:nrow(data), 100), ]
+data_normalized <- normalize(data_sampled)
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+```
+
+
+### Max Link Method:
+```{r}
+hc_max <- hclust(dist_mat_n, method = 'complete')
+hc_max$labels <- data_sampled$Output..S.
+plot(hc_max, cex = 0.6)
+rect.hclust(hc_max, k = 2, border = 2:5)
+```
+
+### Min Link Method:
+```{r}
+hc_min <- hclust(dist_mat_n, method = 'single')
+hc_min$labels <- data_sampled$Output..S.
+plot(hc_min, cex = 0.6)
+rect.hclust(hc_min, k = 2, border = 2:5)
+```
+
+### Mean Method:
+```{r}
+hclust_avg <- hclust(dist_mat_n, method = 'average')
+hclust_avg$labels <- data_sampled$Output..S.
+plot(hclust_avg, cex = 0.6)
+rect.hclust(hclust_avg, k = 2, border = 2:5)
+```
+
+### WARD Link Method:
+```{r}
+hc_ward <- hclust(dist_mat_n, method = 'ward')
+hc_ward$labels <- data_sampled$Output..S.
+plot(hc_ward, cex = 0.6)
+rect.hclust(hc_ward, k = 2, border = 2:5)
+```
+
+
+
+## DIVISIVE (TOP-DOWN) APPROACH
+
+```{r}
+library(cluster)
+dv <- diana(data_sampled)
+dv$order.lab <- data_sampled$Output..S.
+pltree(dv, cex = 0.6, hang = -1, main = "Dendrogram of diana")
+rect.hclust(dv, k = 2, border = 2:10)
+```
+
+## Assessment of the hierarchical clustering algorithms applied 
+
+In the above graphs, it seems ward link method and the max link method outperforms the others. That is, the others can be said to failed to cluster distinctively or be more susceptible to outliers, for instance, there is a cluster containing only one instance in the min link method. That's why, I will move on with the Ward-link and the max-link methods.
+
+
+
+And, as I already knew that is a binary classification problem, I choose k=2, ie, the second level from the root, for where to cut the tree from.
+
+For inclusivity of the whole dataset, I subsampled it several times and run the algorithm on these instances.
+
+
+
+The following code snippet is to visualize the clusters formed using the max link method:
+
+#### Iterative Subsampling For Max-Link Algorithm 
+
+
+
+##### Subsampling: 
+
+```{r}
+data_sampled <- data[sample(1:nrow(data), 1000), ]
+data_normalized <- normalize(data_sampled)
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+```
+```{r}
+library(factoextra)
+hc_max <- hclust(dist_mat_n, method = 'complete')
+hc_max$labels <- data_sampled$Output..S.
+clust <- cutree(hc_max, k = 2)
+fviz_cluster(list(data = data_sampled, cluster = clust))
+```
+
+##### Subsampling: 
+
+```{r}
+data_sampled <- data[sample(1:nrow(data), 1000), ]
+data_normalized <- normalize(data_sampled)
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+```
+
+
+```{r}
+library(factoextra)
+hc_max <- hclust(dist_mat_n, method = 'complete')
+hc_max$labels <- data_sampled$Output..S.
+clust <- cutree(hc_max, k = 2)
+fviz_cluster(list(data = data_sampled, cluster = clust))
+```
+
+
+
+#### Iterative Subsampling For Ward's Link Algorithm 
+
+
+The following code snippet is to visualize the clusters formed using the ward link method:
+
+```{r}
+hc_ward <- hclust(dist_mat_n, method = 'ward')
+hc_ward$labels <- data_sampled$Output..S.
+clust <- cutree(hc_ward, k = 2)
+fviz_cluster(list(data = data_sampled, cluster = clust))
+```
+
+##### Subsampling: 
+
+```{r}
+data_sampled <- data[sample(1:nrow(data), 1000), ]
+data_normalized <- normalize(data_sampled)
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+hc_ward <- hclust(dist_mat_n, method = 'ward')
+hc_ward$labels <- data_sampled$Output..S.
+clust <- cutree(hc_ward, k = 2)
+fviz_cluster(list(data = data_sampled, cluster = clust))
+```
+
+##### Subsampling: 
+
+```{r}
+data_sampled <- data[sample(1:nrow(data), 100), ]
+data_normalized <- normalize(data_sampled)
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+
+hc_ward <- hclust(dist_mat_n, method = 'ward')
+hc_ward$labels <- data_sampled$Output..S.
+clust <- cutree(hc_ward, k = 2)
+fviz_cluster(list(data = data_sampled, cluster = clust))
+```
+
+
+Although, there are overlaps with the clusters formed with Ward's link hierarchical clustering algorithm, on average it seems to outperform the ones obtained with max link. Furthermore, the hierarchical clustering algorithms seem to form clusters consistent with the ones obtained with the PCA and MDS methods in that we can observe 2 clusters, although not fully-distinct, are formed. 
+
+
+## K-MEANS CLUSTERING
+
+As this is a binary classification problem, there are supposed to be 2 clusters; hence, k is initially chosen to be 2. Moreover, this algorithm starts with random initial clusters, and although it is guaranteed that it will converge, what it converges to might be the local minimum, not the global. That's why, multiple times the same algorithm is run with different initial point configurations, and at the end of each run its performance is evaluated. And, finally, the initial configuration producing the best performance, ie, minimizing of the objective function, is chosen. The nstart parameter given as argument to the k-means function is that number of iterations tried to find the best initial configuration. 
+
+Moreover, subsampling has been applied here, as well, for the same reasons stated above. 
+
+
+
+### 2-Means Clustering
+
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+k2 <- kmeans(data_sampled1, centers = 2, nstart = 50)
+fviz_cluster(k2, data = data_sampled1)
+```
+
+#### Re-Subsampling for 2-Means Clustering
+
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+k2 <- kmeans(data_sampled1, centers = 2, nstart = 50)
+fviz_cluster(k2, data = data_sampled1)
+```
+
+### Elbow Method 
+
+Normally k is a hyper-parameter that needs to be provided, and when it is unknown, it is something tricky to find. For this, one of the common methods to find the correct k value is the elbow method in which we choose the k where the elbow occurs on the graph. The elbow choice is somewhat ambiguous, as at each k, the graph decreases. That is, as the number of k grows larger, the total loss has to decrease, however, in the extreme case, we would form clusters for each element, which is obviously not meaningful. That's why, we try to find the k value where the elbow is visible in the graph, ie, the loss has decreased drastically. The following graph shows the loss vs number of clusters:
+
+I used multiple subsampling to obtain the graphs to show the optimal number of clusters:
+
+
+```{r}
+fviz_nbclust(data_sampled1, kmeans, method = "wss")
+```
+
+##### Subsampling 
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+fviz_nbclust(data_sampled1, kmeans, method = "wss")
+```
+
+After subsampled multiple times, all of the graphs obtained above seem consistent.
+
+The elbow choice seem to be meaningful on the 6th cluster. And, k = 6 might actually be a meaningful choice, as this classification further goes down from a binary classification, ie, determining whether the system is faulty, to a multi-class classification, ie, determining where the fault is. In fact, I explained these two problems defined on this dataset in the second assignment, preliminary analysis. However, I moved on with the binary classification problem. The following excerpt, taken from my second assignment, defines the problem for multi-class classification problem:
+
+"After detecting there is a fault, the main problem is to identify where it is. There are 3 phases (A, B, and C), and the Ground (Gnd) in the system whose intervals are where the problem might occur. Hence there 6 different possibilities (there are 3 intervals) regarding where the error is. More explicitly:
+
+[G C B A]
+
+[0 0 0 0] - No Fault
+
+[1 0 0 1] - LG fault (Between Phase A and Gnd)
+
+[0 0 1 1] - LL fault (Between Phase A and Phase B)
+
+[1 0 1 1] - LLG Fault (Between Phases A,B and ground)
+
+[0 1 1 1] - LLL Fault(Between all three phases)
+
+[1 1 1 1] - LLLG fault( Three phase symmetrical fault)"
+
+As can be seen there are six possible cases, and hence, this is a 6-class classification problem.
+
+### Choosing different k values
+
+#### k = 3
+k = 3 seems to be a candidate for an elbow, so it is my next choice for k.
+
+```{r}
+k2 <- kmeans(data_sampled1, centers = 3, nstart = 50)
+fviz_cluster(k2, data = data_sampled1)
+```
+
+#### k = 6
+As explained above, one of the problems defined for this dataset is a 6-class classification problem, and it seems feasible to choose k=6 also due to the elbow method, that's why, next choice for k is k = 6.
+
+```{r}
+k2 <- kmeans(data_sampled1, centers = 6, nstart = 50)
+fviz_cluster(k2, data = data_sampled1)
+```
+
+Although these clusters formed are not distinctly separated in 2D, they are insightful in both k = 2, and k = 6 choices.
+ 
+These clustering graphs also seem that they are more meaningful in a 3D space, however, I was not able to visualize them in 3D. Yet, the 3D-like structure they all form suggest a consistency with what are obtained with the PCA and MDS results.
+
+
+# DBSCAN Clustering
+## Library and Subsampling
+```{r}
+library(dbscan)
+data_sampled2 <- data[sample(1:nrow(data), 1000), ] #sub sampling
+```
+## Different Configurations
+R documentation suggests using minPts as "equal to  the dimensionality of the data plus one or higher". There are 6 input features so 6-7 is suggested. However in my manually done parameter search I found 4 to be the best option which is not far from 6. 
+Document suggests using "kNNdistplot()" for  choosing "eps" value. A sudden increase of the kNN distance suggests that the right of the sudden increase is most likely to be outliers. Inspecting the below graph  the sudden incease is between 0 and 70. After searching the 0-70 range manually,  the best value found is for "eps" is 15.
+DBSCAN documantation is in this link https://www.rdocumentation.org/packages/dbscan/versions/1.1-8/topics/dbscan  
+
+```{r}
+minPtsParam = 7
+kNNdistplot(data_sampled2, minPtsParam)
+```
+### Eps: 35, MinPts:4
+```{r}
+cluster_dbscanChosen <- dbscan(data_sampled2, eps = 15, minPts = 7)
+fviz_cluster(cluster_dbscanChosen, data = data_sampled2)
+```
+
+### Eps: 50, MinPts:4
+```{r}
+cluster_dbscan <- dbscan(data_sampled2, eps = 50, minPts = minPtsParam)
+fviz_cluster(cluster_dbscan, data = data_sampled2)
+```
+
+### Eps: 250, MinPts:4
+```{r}
+cluster_dbscan <- dbscan(data_sampled2, eps = 70, minPts = minPtsParam)
+fviz_cluster(cluster_dbscan, data = data_sampled2)
+```
+
+
+# Evaluation of Clusters
+
+
+
+## External Evaluation using Rand Index
+
+I will move on with the "best" clusters presented above for external evaluation, ie, Hierarchical with Ward's Link (cut at level=2), and 2-Means Clustering.
+
+### Rand Index Evaluation on Ward's Link Method
+
+Using all data without subsampling:
+
+```{r, include=FALSE}
+library(ClusterR)
+```
+
+```{r}
+data_normalized <- normalize(data[,2:ncol(data)])
+dist_mat_n <- dist(data_normalized, method = 'euclidean')
+##rand index for ward's link
+hc_ward <- hclust(dist_mat_n, method = 'ward.D2')
+clusters <- cutree(hc_ward, k = 2)
+true_labels <- factor(data$Output..S., labels = c(1,2))
+
+res1 = external_validation(as.numeric(true_labels), clusters, method = "adjusted_rand_index")
+res1
+```
+
+The Rand Index for this clustering appears to be truly large, so one can deduce that is, in fact, a good clustering.
+
+### Rand Index Evaluation on 2-Means Clustering Method
+
+```{r}
+k2 <- kmeans(data, centers = 2, nstart = 50)
+res1 = external_validation(as.numeric(true_labels), k2$cluster, method = "adjusted_rand_index")
+res1
+```
+Rand index for 2-Means Clustering is acutely lower than that of Ward's Link Method. I think this analysis suffices to say that Ward's Link method outperformed 2-Means Clustering for this data, however, further comparison and analysis will be shown.
+
+
+## Internal and Relative Evaluation
+
+### Evaluating Hierarchical Clustering Methods 
+
+First, I will evaluate the clustering with 2 and 6 clusters, as that is what is meaningful for the data.
+
+```{r, include=FALSE}
+library(clValid)
+```
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+intern <- clValid(data_sampled, nClust = c(2, 6), clMethods = c("hierarchical"), validation = "internal", method="ward")
+summary(intern)
+```
+
+For the sake of inclusivity of all data, subsampling again:
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+intern <- clValid(data_sampled, nClust = c(2, 6), clMethods = c("hierarchical"), validation = "internal", method="ward")
+summary(intern)
+```
+
+As can be seen from the summary of clustering evaluation, one is not dominantly "superior to" the other, which again makes sense considering the semantics behind data, ie, there are both binary and 6-class classification problems defined over the dataset.
+
+### Comparing Hierarchical and K-Means Clustering Methods 
+
+
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+clmethods <- c("hierarchical","kmeans")
+intern <- clValid(data_sampled, nClust = c(2, 6), clMethods = clmethods, validation = "internal", method="ward")
+summary(intern)
+```
+
+```{r, echo=FALSE, fig.width=6, fig.asp=1, out.width="33%", fig.align="default"}
+plot(intern)
+```
+
+##### Subsampling again
+
+```{r}
+data_sampled1 <- data[sample(1:nrow(data), 1000), ]
+clmethods <- c("hierarchical","kmeans")
+intern <- clValid(data_sampled, nClust = c(2, 6), clMethods = clmethods, validation = "internal", method="ward")
+summary(intern)
+```
+
+```{r, echo=FALSE, fig.width=6, fig.asp=1, out.width="33%", fig.align="default"}
+plot(intern)
+```
+
+Connectivity should be minimized, whereas, the others should be maximized. The graph for connectivity suggests, more number of clusters yield poorer clustering and it is almost the same for both hierarchical and k-means clustering.
+
+The more number of clusters seem to yield better clustering for both K-means and hierarchical clustering according to Dune Index graph. Also, as the number of clusters is 6, it seems that the performance of hierarchical and k-means are almost the same, which might suggest that 6 is a feasible choice for the number of clusters, which is consistent with the defined problem and previous analyses.
+
+Analysis on these graphs does not yield obvious results regarding which one outperfomed the other. It might be said that k-means is better (not dominantly) using the internal indices. However, this is inconsistent with what is discussed in Rand Index evaluation.
+ 
+ 
+ 
+### Validation of DBSCAN
+clValid function does not accept DBSCAN as a method, thus silhouette index found seperately. Average silhouette value is 0.3. The range for Silhouette Index is between -1 and 1. The found result is 0.3 which is higher than 0 which makes this result acceptable. Silhouette index combines Dunn index which evaluates inter cluster distance and Davies-Bouldin Index which evaluates intra cluster distance. So this index by itself is a satisfying metric.
+```{r}
+library(dplyr)
+sil.dbscan <- silhouette(cluster_dbscanChosen$cluster, dist(data_sampled2))
+library(RColorBrewer)
+clusterColours <- brewer.pal(9,"Set1")
+plot(sil.dbscan, border=NA, col=clusterColours[sort(clusters)], main="")
+```
+
+
+
+
+# Analysis and Evaluation of Results
+The result of the ISOMAP method seems convenient with other dimensionality reduction methods.
+
+As clValid function does not take DBSCAN as argument, we were not able to compare them directly. However, comparing the silhouette indices computed above, one can see that other clustering methods outperformed DBSCAN for this dataset. Hierarchical clustering with Ward's method seems to outperform all other clustering methods applied here.
+
+# CONCLUSION 
+
+As a result of convenient results of all steps so far, it seems that data forms clusters. That is, upon the arrival of a new data instance, one can infer by projecting that instance point to the dimensions forming the plots and assess whether it falls into the “possibly-faulty” category and behave accordingly, which was the whole purpose from the beginning.
+
+# REFERENCES
+
+[1] Prakash, E. S. (2021, May 22). Electrical fault detection and classification. Kaggle. Retrieved November 30, 2021, from https://www.kaggle.com/esathyaprakash/electrical-fault-detection-and-classification?select=detect_dataset.csv. 
+
+[2] Comprehensive R Archive Network (CRAN). (2021, July 20). Multidimensional scaling [R package smacof version 2.1-3]. The Comprehensive R Archive Network. Retrieved November 30, 2021, from https://cran.r-project.org/web/packages/smacof/. 
